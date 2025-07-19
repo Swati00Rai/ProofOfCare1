@@ -15,61 +15,76 @@ contract ProofOfCare is Ownable {
         address verifiedBy;
     }
 
-    mapping(address => ActivityRecord[]) public userRecords;
-    mapping(address => bool) public verifiers;
-    uint256 public totalRecords;
+    mapping(address => ActivityRecord[]) private _userRecords;
+    mapping(address => bool) private _verifiers;
+    uint256 private _totalRecords;
 
     event RecordAdded(address indexed participant, ActivityType activityType, uint256 hoursCompleted);
     event VerifierAdded(address indexed verifier);
     event VerifierRemoved(address indexed verifier);
 
-    constructor() Ownable(msg.sender) {
-        verifiers[msg.sender] = true;
+    constructor() {
+        _verifiers[msg.sender] = true;
     }
 
-    function addVerifier(address _verifier) external onlyOwner {
-        verifiers[_verifier] = true;
-        emit VerifierAdded(_verifier);
+    modifier onlyVerifier() {
+        require(_verifiers[msg.sender], "Caller is not a verifier");
+        _;
     }
 
-    function removeVerifier(address _verifier) external onlyOwner {
-        verifiers[_verifier] = false;
-        emit VerifierRemoved(_verifier);
+    function addVerifier(address verifier) external onlyOwner {
+        require(verifier != address(0), "Invalid verifier address");
+        _verifiers[verifier] = true;
+        emit VerifierAdded(verifier);
+    }
+
+    function removeVerifier(address verifier) external onlyOwner {
+        require(_verifiers[verifier], "Verifier not found");
+        _verifiers[verifier] = false;
+        emit VerifierRemoved(verifier);
     }
 
     function addRecord(
-        address _participant,
-        ActivityType _activityType,
-        uint256 _hoursCompleted,
-        string memory _description
-    ) external {
-        require(verifiers[msg.sender], "Not authorized verifier");
-        require(_hoursCompleted > 0, "Hours must be positive");
+        address participant,
+        ActivityType activityType,
+        uint256 hoursCompleted,
+        string calldata description
+    ) external onlyVerifier {
+        require(hoursCompleted > 0, "Hours must be greater than zero");
 
-        userRecords[_participant].push(ActivityRecord({
-            participant: _participant,
-            activityType: _activityType,
-            hoursCompleted: _hoursCompleted,
-            description: _description,
+        ActivityRecord memory newRecord = ActivityRecord({
+            participant: participant,
+            activityType: activityType,
+            hoursCompleted: hoursCompleted,
+            description: description,
             timestamp: block.timestamp,
             verifiedBy: msg.sender
-        }));
+        });
 
-        totalRecords++;
-        emit RecordAdded(_participant, _activityType, _hoursCompleted);
+        _userRecords[participant].push(newRecord);
+        _totalRecords++;
+
+        emit RecordAdded(participant, activityType, hoursCompleted);
     }
 
-    function getUserRecords(address _user) external view returns (ActivityRecord[] memory) {
-        return userRecords[_user];
+    function getUserRecords(address user) external view returns (ActivityRecord[] memory) {
+        return _userRecords[user];
     }
 
-    function getTotalHours(address _user, ActivityType _activityType) external view returns (uint256) {
-        uint256 total = 0;
-        for (uint i = 0; i < userRecords[_user].length; i++) {
-            if (userRecords[_user][i].activityType == _activityType) {
-                total += userRecords[_user][i].hoursCompleted;
+    function getTotalHours(address user, ActivityType activityType) external view returns (uint256 total) {
+        ActivityRecord[] memory records = _userRecords[user];
+        for (uint i = 0; i < records.length; i++) {
+            if (records[i].activityType == activityType) {
+                total += records[i].hoursCompleted;
             }
         }
-        return total;
+    }
+
+    function isVerifier(address addr) external view returns (bool) {
+        return _verifiers[addr];
+    }
+
+    function totalRecords() external view returns (uint256) {
+        return _totalRecords;
     }
 }
